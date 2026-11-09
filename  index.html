@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>小票账本</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        primary: '#2b7053',
+        bgPage: '#f7f3e9'
+      }
+    }
+  }
+}
+</script>
+<style>
+*{box-sizing:border-box;}
+body{background-color:#f7f3e9;-webkit-font-smoothing:antialiased;padding-bottom:90px;}
+.tab-item.active{color:#2b7053;}
+.fab{box-shadow:0 4px 14px rgba(43,112,83,0.35);}
+.hide{display:none !important;}
+.bill-item{transition:0.2s;}
+.progress-bar{height:10px;border-radius:999px;background:#e5e7eb;overflow:hidden;}
+.progress-fill{height:100%;background:#2b7053;transition:0.3s;}
+.progress-fill.over{background:#ef4444;}
+</style>
+</head>
+<body>
+<div class="max-w-lg mx-auto px-5 py-6">
+  <div class="flex justify-between items-center mb-6">
+    <h1 class="text-[28px] font-bold text-primary">小票账本</h1>
+    <span class="text-sm text-gray-500">拍照 / 上传小票 → 自动归类入账</span>
+  </div>
+  <div class="flex gap-2 items-center mb-6">
+    <select id="yearSelectBtn" class="bg-primary text-white px-3 py-2 rounded-full text-sm">
+      <option value="">全部年份</option>
+    </select>
+    <button onclick="renderCompare()" class="bg-white border border-primary text-primary px-3 py-2 rounded-full text-sm">往年对比</button>
+    <button onclick="openBudgetModal()" class="bg-white border border-primary text-primary px-3 py-2 rounded-full text-sm">设置预算</button>
+  </div>
+
+  <!-- 预算卡片 -->
+  <div class="bg-white rounded-2xl p-4 mb-4" id="budgetCard">
+    <div class="flex justify-between items-center mb-2">
+      <span class="font-medium">本月预算</span>
+      <span id="budgetText">¥0.00 / ¥0.00</span>
+    </div>
+    <div class="progress-bar mb-2">
+      <div id="budgetProgress" class="progress-fill" style="width:0%"></div>
+    </div>
+    <div class="text-sm text-gray-500">剩余：<span id="budgetRemain">¥0.00</span></div>
+  </div>
+
+  <div class="grid grid-cols-3 gap-3 mb-6">
+    <div class="bg-white rounded-2xl p-4 text-center">
+      <div class="text-sm text-gray-500 mb-1">今日</div>
+      <div class="text-[24px] font-semibold text-primary" id="dayMoney">¥0.00</div>
+      <div class="text-xs text-gray-400" id="dayCount">0笔</div>
+    </div>
+    <div class="bg-white rounded-2xl p-4 text-center">
+      <div class="text-sm text-gray-500 mb-1">本月</div>
+      <div class="text-[24px] font-semibold text-primary" id="monthMoney">¥0.00</div>
+      <div class="text-xs text-gray-400" id="monthCount">0笔</div>
+    </div>
+    <div class="bg-white rounded-2xl p-4 text-center">
+      <div class="text-sm text-gray-500 mb-1">本年</div>
+      <div class="text-[24px] font-semibold text-primary" id="yearMoney">¥0.00</div>
+      <div class="text-xs text-gray-400" id="yearCount">0笔</div>
+    </div>
+  </div>
+
+  <div id="comparePanel" class="bg-white rounded-xl p-4 mb-6 hide">
+    <h3 class="font-medium mb-3">📅 两年消费对比</h3>
+    <div class="grid grid-cols-2 gap-2 text-sm mb-3">
+      <div class="bg-gray-50 p-2 rounded">
+        <div id="y1title">2025</div>
+        <div>总消费：<span id="y1total">¥0.00</span></div>
+        <div>笔数：<span id="y1cnt">0</span></div>
+      </div>
+      <div class="bg-gray-50 p-2 rounded">
+        <div id="y2title">2026</div>
+        <div>总消费：<span id="y2total">¥0.00</span></div>
+        <div>笔数：<span id="y2cnt">0</span></div>
+      </div>
+    </div>
+    <canvas id="compareChart"></canvas>
+    <div class="text-center mt-2">
+      <button onclick="closeCompare()" class="text-sm text-gray-500">关闭对比</button>
+    </div>
+  </div>
+
+  <div class="mb-6">
+    <div class="flex justify-between items-center mb-3">
+      <h2 class="text-lg font-medium">本月分类</h2>
+      <span class="text-sm text-gray-500" id="monthTitle">本月 · 合计 ¥0.00</span>
+    </div>
+    <div class="bg-white rounded-xl p-5 text-center text-gray-400" id="pieBox">
+      本月暂无记录，点右下角「拍小票」开始记账
+    </div>
+    <canvas id="pieChart" class="hide w-full"></canvas>
+  </div>
+
+  <div class="mb-8">
+    <div class="flex justify-between items-center mb-3">
+      <h2 class="text-lg font-medium">最近小票</h2>
+      <span class="text-sm text-gray-500 cursor-pointer" onclick="switchTab('bill')">全部 ></span>
+    </div>
+    <div class="border-dashed border-2 border-gray-200 bg-white rounded-xl p-8 text-center text-gray-400" id="recentBox">
+      还没有小票记录
+    </div>
+    <div id="recentList" class="hide space-y-2"></div>
+  </div>
+
+  <!-- 设置预算弹窗 -->
+  <div id="budgetModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hide">
+    <div class="bg-white rounded-xl p-6 w-80">
+      <h3 class="font-bold text-center mb-4">设置本月预算</h3>
+      <div class="mb-4">
+        <label class="text-sm">预算金额</label>
+        <input id="inpBudget" type="number" step="0.01" class="w-full p-2 rounded-lg border border-gray-200">
+      </div>
+      <div class="flex gap-2">
+        <button onclick="saveBudget()" class="flex-1 py-2 bg-primary text-white rounded-lg">保存</button>
+        <button onclick="closeBudgetModal()" class="flex-1 py-2 bg-gray-200 rounded-lg">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加小票弹窗 -->
+  <div id="uploadModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hide">
+    <div class="bg-white rounded-xl p-6 w-80">
+      <h3 class="font-bold text-center mb-4">添加小票</h3>
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <label class="block">
+          <input type="file" id="filePicker" accept="image/*" class="hidden">
+          <div class="border-2 border-dashed border-primary rounded-xl py-4 text-center cursor-pointer hover:bg-gray-50">
+            <i class="fa fa-picture-o text-xl text-primary"></i>
+            <div class="text-sm mt-1">相册选图</div>
+          </div>
+        </label>
+        <label class="block">
+          <input type="file" id="camPicker" accept="image/*" capture="environment" class="hidden">
+          <div class="border-2 border-dashed border-gray-300 rounded-xl py-4 text-center cursor-pointer hover:bg-gray-50">
+            <i class="fa fa-camera text-xl text-gray-400"></i>
+            <div class="text-sm mt-1">拍照</div>
+          </div>
+        </label>
+      </div>
+      <div class="text-center text-sm text-gray-500 mb-3" id="ocrTip">选择图片识别文字</div>
+      <button onclick="closeModal()" class="w-full py-2 bg-gray-200 rounded-lg">取消</button>
+    </div>
+  </div>
+
+  <!-- 录入/编辑弹窗 -->
+  <div id="editModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hide">
+    <div class="bg-white rounded-xl p-6 w-[92%] max-w-md max-h-[85vh] overflow-y-auto">
+      <h3 class="font-bold text-center mb-4" id="editTitle">录入账单</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="text-sm">识别文字（可修改）</label>
+          <textarea id="ocrText" rows="3" class="w-full p-2 rounded-lg border border-gray-200"></textarea>
+        </div>
+        <div>
+          <label class="text-sm">日期</label>
+          <input id="inpDate" type="date" class="w-full p-2 rounded-lg border border-gray-200">
+        </div>
+        <div>
+          <label class="text-sm">商店名称</label>
+          <input id="inpShop" class="w-full p-2 rounded-lg border border-gray-200">
+        </div>
+        <div>
+          <label class="text-sm">分类</label>
+          <select id="inpCat" class="w-full p-2 rounded-lg border border-gray-200">
+            <option value="商超">商超</option>
+            <option value="餐饮">餐饮</option>
+            <option value="交通">交通</option>
+            <option value="服饰">服饰</option>
+            <option value="育儿">育儿</option>
+            <option value="医药">医药</option>
+            <option value="其他">其他</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-sm">商品明细</label>
+          <textarea id="inpItems" rows="2" class="w-full p-2 rounded-lg border border-gray-200"></textarea>
+        </div>
+        <div>
+          <label class="text-sm">总金额</label>
+          <input id="inpTotal" type="number" step="0.01" class="w-full p-2 rounded-lg border border-gray-200">
+        </div>
+        <input type="hidden" id="editId">
+        <div class="flex gap-2 pt-2">
+          <button onclick="saveRecord()" class="flex-1 py-2 bg-primary text-white rounded-lg">保存</button>
+          <button onclick="closeEditModal()" class="flex-1 py-2 bg-gray-200 rounded-lg">取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 账单页 -->
+  <div id="pageBill" class="hide">
+    <h2 class="text-lg font-medium mb-3">全部账单</h2>
+    <div id="billList" class="space-y-3"></div>
+  </div>
+  <!-- 统计页 -->
+  <div id="pageStat" class="hide">
+    <h2 class="text-lg font-medium mb-3">月度统计</h2>
+    <div class="bg-white rounded-xl p-4 mb-4">
+      <canvas id="statChart"></canvas>
+    </div>
+  </div>
+  <!-- 商户页 -->
+  <div id="pageShop" class="hide">
+    <h2 class="text-lg font-medium mb-3">商户汇总</h2>
+    <div id="shopList" class="space-y-3"></div>
+  </div>
+  <!-- 数据页 -->
+  <div id="pageData" class="hide">
+    <h2 class="text-lg font-medium mb-3">数据备份</h2>
+    <div class="space-y-3 mt-4">
+      <button onclick="exportCSV()" class="w-full py-2 bg-primary text-white rounded-lg">导出CSV（Excel打开）</button>
+      <button onclick="exportBackupJson()" class="w-full py-2 bg-primary text-white rounded-lg">导出备份文件</button>
+      <label class="block w-full py-2 bg-gray-200 text-center rounded-lg cursor-pointer">
+        导入备份（覆盖现有）
+        <input id="importFile" type="file" accept=".json" class="hidden">
+      </label>
+      <button onclick="clearAllData()" class="w-full py-2 bg-red-500 text-white rounded-lg">清空全部账单</button>
+    </div>
+  </div>
+
+  <button class="fab fixed right-6 bottom-20 bg-primary text-white px-6 py-3 rounded-full text-lg flex items-center gap-2" onclick="openUpload()">
+    <i class="fa fa-camera"></i> 拍小票
+  </button>
+</div>
+
+<!-- 底部导航 -->
+<div class="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100">
+  <div class="max-w-lg mx-auto grid grid-cols-5 py-3 text-center text-sm">
+    <div class="tab-item active text-primary" onclick="switchTab('home')">
+      <i class="fa fa-home text-xl"></i>
+      <div>首页</div>
+    </div>
+    <div class="tab-item text-gray-400" onclick="switchTab('bill')">
+      <i class="fa fa-list-alt text-xl"></i>
+      <div>账单</div>
+    </div>
+    <div class="tab-item text-gray-400" onclick="switchTab('stat')">
+      <i class="fa fa-bar-chart text-xl"></i>
+      <div>统计</div>
+    </div>
+    <div class="tab-item text-gray-400" onclick="switchTab('shop')">
+      <i class="fa fa-shop text-xl"></i>
+      <div>商户</div>
+    </div>
+    <div class="tab-item text-gray-400" onclick="switchTab('data')">
+      <i class="fa fa-database text-xl"></i>
+      <div>数据</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DB_NAME = "XiaoPiaoBookDB";
+let db, pieChart, statChart, compareChart;
+let currentTab = "home";
+let filterYear = "";
+let monthBudget = 0;
+
+// 初始化数据库
+function initDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onupgradeneeded = e => {
+      db = e.target.result;
+      if (!db.objectStoreNames.contains("records")) {
+        const store = db.createObjectStore("records", { keyPath: "id", autoIncrement: true });
+        store.createIndex("date", "date");
+      }
+      if (!db.objectStoreNames.contains("setting")) {
+        db.createObjectStore("setting", { keyPath: "key" });
+      }
+    };
+    req.onsuccess = async e => {
+      db = e.target.result;
+      await loadBudget();
+      bindFileInput();
+      fillYearSelect();
+      renderPage();
+      resolve();
+    };
+    req.onerror = reject;
+  })
+}
+
+// 预算读写
+async function loadBudget(){
+  const tx = db.transaction("setting","readonly");
+  const st = tx.objectStore("setting");
+  const res = await st.get("monthBudget");
+  if(res) monthBudget = Number(res.value);
+}
+async function saveBudget(){
+  const val = Number(document.getElementById("inpBudget").value || 0);
+  monthBudget = val;
+  const tx = db.transaction("setting","readwrite");
+  const st = tx.objectStore("setting");
+  st.put({key:"monthBudget", value:val});
+  tx.oncomplete = ()=>{
+    closeBudgetModal();
+    renderPage();
+  }
+}
+function openBudgetModal(){
+  document.getElementById("inpBudget").value = monthBudget || "";
+  document.getElementById("budgetModal").classList.remove("hide");
+}
+function closeBudgetModal(){
+  document.getElementById("budgetModal").classList.add("hide");
+}
+
+// 获取全部记录
+function getAllRecords() {
+  return new Promise(resolve => {
+    const tx = db.transaction("records", "readonly");
+    const st = tx.objectStore("records");
+    const req = st.getAll();
+    req.onsuccess = () => resolve(req.result);
+  })
+}
+
+// 保存账单
+function saveRecord() {
+  const id = document.getElementById("editId").value;
+  const rec = {
+    date: document.getElementById("inpDate").value,
+    shop: document.getElementById("inpShop").value.trim(),
+    category: document.getElementById("inpCat").value,
+    items: document.getElementById("inpItems").value.trim(),
+    total: Number(document.getElementById("inpTotal").value || 0),
+    rawText: document.getElementById("ocrText").value
+  };
+  if (!rec.date || !rec.shop || !rec.total) {
+    alert("日期、商店、金额不能为空");
+    return;
+  }
+  const tx = db.transaction("records", "readwrite");
+  const st = tx.objectStore("records");
+  if (id) {
+    rec.id = Number(id);
+    st.put(rec);
+  } else {
+    st.add(rec);
+  }
+  tx.oncomplete = () => {
+    closeEditModal();
+    fillYearSelect();
+    renderPage();
+  }
+}
+
+// 打开编辑
+async function openEdit(id) {
+  const all = await getAllRecords();
+  const item = all.find(x => x.id === Number(id));
+  if (!item) return;
+  document.getElementById("editId").value = item.id;
+  document.getElementById("editTitle").innerText = "编辑账单";
+  document.getElementById("ocrText").value = item.rawText || "";
+  document.getElementById("inpDate").value = item.date;
+  document.getElementById("inpShop").value = item.shop;
+  document.getElementById("inpCat").value = item.category;
+  document.getElementById("inpItems").value = item.items || "";
+  document.getElementById("inpTotal").value = item.total;
+  document.getElementById("editModal").classList.remove("hide");
+}
+
+// 删除账单
+function deleteRecord(id) {
+  if (!confirm("确定删除这条账单？")) return;
+  const tx = db.transaction("records", "readwrite");
+  const st = tx.objectStore("records");
+  st.delete(Number(id));
+  tx.oncomplete = () => {
+    fillYearSelect();
+    renderPage();
+  }
+}
+
+// 绑定图片上传 + iOS原生文字识别
+function bindFileInput() {
+  const fileIn = document.getElementById("filePicker");
+  const camIn = document.getElementById("camPicker");
+  fileIn.onchange = e => handleImage(e.target.files[0]);
+  camIn.onchange = e => handleImage(e.target.files[0]);
+  const importIn = document.getElementById("importFile");
+  importIn.onchange = async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const txt = await f.text();
+    const data = JSON.parse(txt);
+    if (!Array.isArray(data)) { alert("备份文件错误"); return; }
+    if (!confirm("导入会覆盖现有账单，确认？")) return;
+    const tx = db.transaction("records", "readwrite");
+    const st = tx.objectStore("records");
+    st.clear();
+    tx.oncomplete = () => {
+      const tx2 = db.transaction("records", "readwrite");
+      const st2 = tx2.objectStore("records");
+      data.forEach(r => { delete r.id; st2.add(r); });
+      tx2.oncomplete = () => { alert("导入成功"); fillYearSelect(); renderPage(); }
+    }
+  }
+}
+
+// 图片处理 + 苹果原生TextDetector识别
+async function handleImage(file) {
+  const tip = document.getElementById("ocrTip");
+  tip.innerText = "识别中...";
+  try {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.src = url;
+    await new Promise(resolve => img.onload = resolve);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    // 压缩图片，避免过大
+    const maxW = 1200;
+    let w = img.width, h = img.height;
+    if (w > maxW) {
+      const scale = maxW / w;
+      w *= scale; h *= scale;
+    }
+    canvas.width = w; canvas.height = h;
+    ctx.drawImage(img, 0, 0, w, h);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.7));
+    const bitmap = await createImageBitmap(blob);
+    // 苹果自带文字识别
+    const detector = new window.TextDetector();
+    const results = await detector.detect(bitmap);
+    let allText = results.map(r => r.text).join("\n");
+    if (!allText) allText = "未识别到文字，可以手动填写";
+    parseOcrText(allText);
+  } catch (err) {
+    tip.innerText = "识别失败，手动填写";
+    parseOcrText("");
+  }
+}
+
+// 解析识别出来的文字
+function parseOcrText(txt) {
+  document.getElementById("ocrText").value = txt;
+  document.getElementById("editId").value = "";
+  document.getElementById("editTitle").innerText = "录入账单";
+  // 提取金额
+  const moneyMatch = txt.match(/[0-9]+\.[0-9]{2}/g);
+  if (moneyMatch) {
+    const nums = moneyMatch.map(x => Number(x));
+    document.getElementById("inpTotal").value = Math.max(...nums);
+  }
+  // 提取日期
+  const dateMatch = txt.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (dateMatch) {
+    const y = dateMatch[1], m = dateMatch[2].padStart(2, "0"), d = dateMatch[3].padStart(2, "0");
+    document.getElementById("inpDate").value = `${y}-${m}-${d}`;
+  } else {
+    document.getElementById("inpDate").value = new Date().toISOString().slice(0,10);
+  }
+  // 商户名取第一行
+  const lines = txt.split(/\n/).filter(s=>s.trim());
+  if(lines.length>0) document.getElementById("inpShop").value = lines[0].trim();
+  document.getElementById("inpItems").value = txt;
+  closeModal();
+  document.getElementById("editModal").classList.remove("hide");
+}
+
+// 年份下拉
+async function fillYearSelect() {
+  const all = await getAllRecords();
+  const years = [...new Set(all.map(r => r.date.slice(0,4)))].sort();
+  const sel = document.getElementById("yearSelectBtn");
+  sel.innerHTML = `<option value="">全部年份</option>`;
+  years.forEach(y => sel.innerHTML += `<option value="${y}">${y}年</option>`);
+  sel.onchange = ()=>{ filterYear = sel.value; renderPage(); }
+}
+
+// Tab切换
+function switchTab(tabName) {
+  currentTab = tabName;
+  document.querySelectorAll(".tab-item").forEach(el=>{
+    el.classList.remove("active");
+    el.classList.add("text-gray-400");
+  })
+  const map = {home:0,bill:1,stat:2,shop:3,data:4};
+  const tabs = document.querySelectorAll(".tab-item");
+  if(map[tabName]!==undefined){
+    tabs[map[tabName]].classList.add("active");
+    tabs[map[tabName]].classList.remove("text-gray-400");
+  }
+  document.getElementById("pageBill").classList.add("hide");
+  document.getElementById("pageStat").classList.add("hide");
+  document.getElementById("pageShop").classList.add("hide");
+  document.getElementById("pageData").classList.add("hide");
+  if(tabName==="bill") document.getElementById("pageBill").classList.remove("hide");
+  if(tabName==="stat") document.getElementById("pageStat").classList.remove("hide");
+  if(tabName==="shop") document.getElementById("pageShop").classList.remove("hide");
+  if(tabName==="data") document.getElementById("pageData").classList.remove("hide");
+  renderPage();
+}
+
+// 弹窗
+function openUpload(){document.getElementById("uploadModal").classList.remove("hide");}
+function closeModal(){document.getElementById("uploadModal").classList.add("hide");}
+function closeEditModal(){document.getElementById("editModal").classList.add("hide");}
+function closeCompare(){document.getElementById("comparePanel").classList.add("hide");}
+
+// 渲染页面
+async function renderPage() {
+  const allRaw = await getAllRecords();
+  let list = allRaw;
+  if(filterYear) list = list.filter(r=>r.date.startsWith(filterYear));
+  list.sort((a,b)=>new Date(b.date)-new Date(a.date));
+
+  const today = new Date().toISOString().slice(0,10);
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const thisYear = String(now.getFullYear());
+  const dayList = list.filter(r=>r.date === today);
+  const monList = list.filter(r=>r.date.startsWith(thisMonth));
+  const yrList = list.filter(r=>r.date.startsWith(thisYear));
+  const sum = arr => arr.reduce((s,i)=>s+i.total,0);
+  const monthSpend = sum(monList);
+
+  // 更新预算模块
+  const budgetEl = document.getElementById("budgetText");
+  const progressEl = document.getElementById("budgetProgress");
+  const remainEl = document.getElementById("budgetRemain");
+  budgetEl.innerText = `¥${monthSpend.toFixed(2)} / ¥${monthBudget.toFixed(2)}`;
+  const remain = monthBudget - monthSpend;
+  remainEl.innerText = `¥${remain.toFixed(2)}`;
+  if(monthBudget > 0){
+    let pct = (monthSpend / monthBudget) * 100;
+    if(pct>100) pct = 100;
+    progressEl.style.width = pct + "%";
+    if(monthSpend > monthBudget){
+      progressEl.classList.add("over");
+      remainEl.classList.add("text-red-500");
+    }else{
+      progressEl.classList.remove("over");
+      remainEl.classList.remove("text-red-500");
+    }
+  }else{
+    progressEl.style.width = "0%";
+  }
+
+  document.getElementById("dayMoney").innerText = "¥"+sum(dayList).toFixed(2);
+  document.getElementById("dayCount").innerText = dayList.length+"笔";
+  document.getElementById("monthMoney").innerText = "¥"+monthSpend.toFixed(2);
+  document.getElementById("monthCount").innerText = monList.length+"笔";
+  document.getElementById("yearMoney").innerText = "¥"+sum(yrList).toFixed(2);
+  document.getElementById("yearCount").innerText = yrList.length+"笔";
+  document.getElementById("monthTitle").innerText = `本月 · 合计 ¥${monthSpend.toFixed(2)}`;
+
+  // 最近5条
+  const recent = list.slice(0,5);
+  const recentBox = document.getElementById("recentBox");
+  const recentListEl = document.getElementById("recentList");
+  if(recent.length===0){
+    recentBox.classList.remove("hide"); recentListEl.classList.add("hide");
+  }else{
+    recentBox.classList.add("hide"); recentListEl.classList.remove("hide");
+    recentListEl.innerHTML = recent.map(r=>`
+      <div class="bg-white p-3 rounded-xl flex justify-between items-center">
+        <div>
+          <div class="font-medium">${r.shop}</div>
+          <div class="text-xs text-gray-400">${r.date} · ${r.category}</div>
+        </div>
+        <div class="text-primary font-semibold">¥${r.total.toFixed(2)}</div>
+      </div>
+    `).join("");
+  }
+
+  // 账单列表
+  const billListEl = document.getElementById("billList");
+  if(list.length===0){
+    billListEl.innerHTML = `<div class="bg-white p-6 rounded-xl text-center text-gray-400">暂无账单</div>`;
+  }else{
+    billListEl.innerHTML = list.map(r=>`
+      <div class="bg-white p-4 rounded-xl bill-item">
+        <div class="flex justify-between items-start">
+          <div>
+            <div class="font-medium text-base">${r.shop}</div>
+            <div class="text-xs text-gray-400 mt-1">${r.date}｜${r.category}</div>
+            <div class="text-sm text-gray-500 mt-1">${(r.items||"").substring(0,40)}</div>
+          </div>
+          <div class="text-primary font-bold">¥${r.total.toFixed(2)}</div>
+        </div>
+        <div class="flex gap-3 mt-3 justify-end">
+          <button onclick="openEdit(${r.id})" class="text-sm text-blue-500"><i class="fa fa-pencil"></i> 编辑</button>
+          <button onclick="deleteRecord(${r.id})" class="text-sm text-red-500"><i class="fa fa-trash"></i> 删除</button>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  drawPie(monList);
+  renderShopList(list);
+  drawStat(list);
+}
+
+// 饼图
+function drawPie(monList) {
+  const ctx = document.getElementById("pieChart").getContext("2d");
+  const box = document.getElementById("pieBox");
+  if(monList.length===0){
+    box.classList.remove("hide"); document.getElementById("pieChart").classList.add("hide");
+    return;
+  }
+  box.classList.add("hide"); document.getElementById("pieChart").classList.remove("hide");
+  const group = {};
+  monList.forEach(r=> group[r.category] = (group[r.category]||0)+r.total);
+  const labels = Object.keys(group);
+  const data = Object.values(group);
+  if(pieChart) pieChart.destroy();
+  pieChart = new Chart(ctx,{
+    type:"pie",
+    data:{labels,datasets:[{data,backgroundColor:['#2b7053','#548c72','#76b897','#9ed4b9','#bfe7d3','#d4efdf','#dddddd']}]},
+    options:{responsive:true}
+  })
+}
+
+// 商户汇总
+function renderShopList(list) {
+  const shopEl = document.getElementById("shopList");
+  const group = {};
+  list.forEach(r=>{
+    if(!group[r.shop]) group[r.shop]={sum:0,count:0};
+    group[r.shop].sum += r.total; group[r.shop].count +=1;
+  })
+  const arr = Object.entries(group).sort((a,b)=>b[1].sum - a[1].sum);
+  if(arr.length===0){
+    shopEl.innerHTML = `<div class="bg-white p-6 rounded-xl text-center text-gray-400">暂无记录</div>`;
+    return;
+  }
+  shopEl.innerHTML = arr.map(([shop,info])=>`
+    <div class="bg-white p-4 rounded-xl flex justify-between">
+      <div class="font-medium">${shop}</div>
+      <div class="text-primary">¥${info.sum.toFixed(2)}（${info.count}笔）</div>
+    </div>
+  `).join("");
+}
+
+// 月度柱状图
+function drawStat(list) {
+  const ctx = document.getElementById("statChart").getContext("2d");
+  const monthGroup = {};
+  list.forEach(r=>{
+    const m = r.date.slice(0,7);
+    monthGroup[m] = (monthGroup[m]||0)+r.total;
+  })
+  const keys = Object.keys(monthGroup).sort();
+  const data = keys.map(k=>monthGroup[k]);
+  if(statChart) statChart.destroy();
+  statChart = new Chart(ctx,{
+    type:"bar",
+    data:{labels:keys,datasets:[{label:"月度消费",data,backgroundColor:"#2b7053"}]},
+    options:{responsive:true}
+  })
+}
+
+// 往年对比
+async function renderCompare() {
+  const all = await getAllRecords();
+  const years = [...new Set(all.map(r=>r.date.slice(0,4)))].sort();
+  if(years.length<2){ alert("至少要有两年账单才能对比"); return; }
+  const y1 = years[years.length-2];
+  const y2 = years[years.length-1];
+  const y1List = all.filter(r=>r.date.startsWith(y1));
+  const y2List = all.filter(r=>r.date.startsWith(y2));
+  const sum = arr=>arr.reduce((s,i)=>s+i.total,0);
+  document.getElementById("y1title").innerText = y1+"年";
+  document.getElementById("y2title").innerText = y2+"年";
+  document.getElementById("y1total").innerText = "¥"+sum(y1List).toFixed(2);
+  document.getElementById("y2total").innerText = "¥"+sum(y2List).toFixed(2);
+  document.getElementById("y1cnt").innerText = y1List.length;
+  document.getElementById("y2cnt").innerText = y2List.length;
+  document.getElementById("comparePanel").classList.remove("hide");
+
+  const ctx = document.getElementById("compareChart").getContext("2d");
+  const catSet = new Set([...y1List.map(x=>x.category),...y2List.map(x=>x.category)]);
+  const cats = [...catSet];
+  const g1={},g2={};
+  cats.forEach(c=>g1[c]=0,g2[c]=0);
+  y1List.forEach(r=>g1[r.category]+=r.total);
+  y2List.forEach(r=>g2[r.category]+=r.total);
+  if(compareChart) compareChart.destroy();
+  compareChart = new Chart(ctx,{
+    type:"bar",
+    data:{
+      labels:cats,
+      datasets:[
+        {label:y1,data:cats.map(c=>g1[c]),backgroundColor:"#cccccc"},
+        {label:y2,data:cats.map(c=>g2[c]),backgroundColor:"#2b7053"}
+      ]
+    },
+    options:{responsive:true}
+  })
+}
+
+// 导出
+async function exportCSV() {
+  const list = await getAllRecords();
+  const header = ["日期","商店","分类","金额","明细","原文"];
+  const rows = [header];
+  list.forEach(r=>rows.push([r.date,r.shop,r.category,r.total.toFixed(2),r.items||"",r.rawText||""]));
+  const csv = rows.map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+  downloadFile(csv,"小票账单.csv","text/csv;charset=utf-8");
+}
+async function exportBackupJson() {
+  const list = await getAllRecords();
+  downloadFile(JSON.stringify(list,null,2),"小票备份.json","application/json");
+}
+function clearAllData() {
+  if(!confirm("⚠️ 全部账单会清空，无法恢复！")) return;
+  const tx = db.transaction("records","readwrite");
+  const st = tx.objectStore("records");
+  st.clear();
+  tx.oncomplete = ()=>{ fillYearSelect(); renderPage(); }
+}
+function downloadFile(content,name,type){
+  const blob = new Blob([content],{type});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// 启动
+initDB();
+</script>
+</body>
+</html>
